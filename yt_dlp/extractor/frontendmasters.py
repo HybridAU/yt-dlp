@@ -16,6 +16,7 @@ from ..utils import (
 class FrontendMastersBaseIE(InfoExtractor):
     _API_BASE = 'https://api.frontendmasters.com/v1/kabuki'
     _LOGIN_URL = 'https://frontendmasters.com/login/'
+    _SUBTITLE_URL = 'https://captions.frontendmasters.com/assets/courses'
 
     _NETRC_MACHINE = 'frontendmasters'
 
@@ -68,8 +69,7 @@ class FrontendMastersPageBaseIE(FrontendMastersBaseIE):
             chapters = [url_or_none(e) for e in lesson_elements if url_or_none(e)]
         return chapters
 
-    @staticmethod
-    def _extract_lesson(chapters, lesson_id, lesson):
+    def _extract_lesson(self, chapters, lesson_id, lesson, course_name, date_published):
         title = lesson.get('title') or lesson_id
         display_id = lesson.get('slug')
         description = lesson.get('description')
@@ -86,6 +86,11 @@ class FrontendMastersPageBaseIE(FrontendMastersBaseIE):
 
         duration = None
         timestamp = lesson.get('timestamp')
+        subtitles = {
+            'en': [{
+                'url': f'{self._SUBTITLE_URL}/{date_published}-{course_name}/{index}-{display_id}.vtt'
+            }]
+        }
         if isinstance(timestamp, compat_str):
             mobj = re.search(
                 r'(?P<start>\d{1,2}:\d{1,2}:\d{1,2})\s*-(?P<end>\s*\d{1,2}:\d{1,2}:\d{1,2})',
@@ -106,6 +111,7 @@ class FrontendMastersPageBaseIE(FrontendMastersBaseIE):
             'duration': duration,
             'chapter': chapter,
             'chapter_number': chapter_number,
+            'subtitles': subtitles,
         }
 
 
@@ -147,17 +153,10 @@ class FrontendMastersIE(FrontendMastersBaseIE):
 
         formats = self._extract_m3u8_formats(m3u8_url, lesson_id)
 
-        subtitles = {
-            'en': [{
-                'url': f'{self._API_BASE}/transcripts/{lesson_id}.vtt'
-            }]
-        }
-
         return {
             'id': lesson_id,
             'title': lesson_id,
             'formats': formats,
-            'subtitles': subtitles
         }
 
 
@@ -186,6 +185,7 @@ class FrontendMastersLessonIE(FrontendMastersPageBaseIE):
         course_name, lesson_name = mobj.group('course_name', 'lesson_name')
 
         course = self._download_course(course_name, url)
+        date_published = course.get("datePublished")
 
         lesson_id, lesson = next(
             (video_id, data)
@@ -193,7 +193,7 @@ class FrontendMastersLessonIE(FrontendMastersPageBaseIE):
             if data.get('slug') == lesson_name)
 
         chapters = self._extract_chapters(course)
-        return self._extract_lesson(chapters, lesson_id, lesson)
+        return self._extract_lesson(chapters, lesson_id, lesson, course_name, date_published)
 
 
 class FrontendMastersCourseIE(FrontendMastersPageBaseIE):
@@ -218,6 +218,7 @@ class FrontendMastersCourseIE(FrontendMastersPageBaseIE):
         course_name = self._match_id(url)
 
         course = self._download_course(course_name, url)
+        date_published = course.get('datePublished')
 
         chapters = self._extract_chapters(course)
 
@@ -230,7 +231,7 @@ class FrontendMastersCourseIE(FrontendMastersPageBaseIE):
             lesson_id = lesson.get('hash') or lesson.get('statsId')
             if not lesson_id or not lesson_name:
                 continue
-            entries.append(self._extract_lesson(chapters, lesson_id, lesson))
+            entries.append(self._extract_lesson(chapters, lesson_id, lesson, course_name, date_published))
 
         title = course.get('title')
         description = course.get('description')
